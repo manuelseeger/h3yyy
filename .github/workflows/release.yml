@@ -6,6 +6,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write # GitHub OIDC identity for secretless Tailscale access
 
 concurrency:
   group: h3yyy-production
@@ -18,6 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     environment: p
     steps:
+      - name: Verify the Tailscale OIDC trust is configured
+        env:
+          CLIENT_ID: ${{ vars.TS_OIDC_CLIENT_ID }}
+          AUDIENCE: ${{ vars.TS_OIDC_AUDIENCE }}
+        run: |
+          test -n "$CLIENT_ID" && test -n "$AUDIENCE" || {
+            echo 'Set TS_OIDC_CLIENT_ID and TS_OIDC_AUDIENCE in the p environment' >&2
+            exit 1
+          }
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
@@ -39,8 +49,8 @@ jobs:
             RELEASE_TAG=${{ github.event.release.tag_name }}
       - uses: tailscale/github-action@v4
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          oauth-client-id: ${{ vars.TS_OIDC_CLIENT_ID }}
+          audience: ${{ vars.TS_OIDC_AUDIENCE }}
           tags: tag:github-actions
       - name: Deploy the immutable digest through Komodo
         env:
