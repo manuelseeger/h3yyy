@@ -51,15 +51,25 @@ def deploy(config):
 
 def verify():
     # This verifies the newly deployed revision, not an old still-running container.
+    last_result = "no response"
     for _ in range(30):
         try:
-            with request.urlopen("https://h3yyy.m3s.app/release.txt", timeout=10) as response:
-                if response.read().decode().strip() == TAG:
+            # Cloudflare rejects Python-urllib's default User-Agent with 403.
+            probe = request.Request(
+                "https://h3yyy.m3s.app/release.txt",
+                headers={"User-Agent": "h3yyy-release-check/1.0"},
+            )
+            with request.urlopen(probe, timeout=10) as response:
+                actual = response.read().decode().strip()
+                if actual == TAG:
                     return
-        except (error.URLError, TimeoutError):
-            pass
+                last_result = f"HTTP {response.status}, served {actual!r}"
+        except error.HTTPError as exc:
+            last_result = f"HTTP {exc.code}"
+        except (error.URLError, TimeoutError) as exc:
+            last_result = type(exc).__name__
         time.sleep(4)
-    raise RuntimeError("Public URL did not serve the expected release tag")
+    raise RuntimeError(f"Public URL did not serve {TAG!r}: {last_result}")
 
 
 def main():
