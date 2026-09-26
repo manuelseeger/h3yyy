@@ -1,0 +1,22 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and check app
+        run: |
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+          docker compose -f compose.yaml -f compose.dev.yaml up --build --wait -d
+          curl --fail --retry 5 --retry-delay 1 http://127.0.0.1:18080/
+          curl --fail --retry 5 --retry-delay 1 http://127.0.0.1:18080/healthz
+      - name: Clean up
+        if: always()
+        run: docker compose -f compose.yaml -f compose.dev.yaml down --remove-orphans

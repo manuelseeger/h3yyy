@@ -1,21 +1,22 @@
 # h3yyy
 
-A small Compose-deployed application at <https://h3yyy.m3s.app>.
+A small public HTTP demo intended for <https://h3yyy.m3s.app>.
+
+The root `compose.yaml` is ordinary Compose: one locally built nginx service, a normal `/healthz` endpoint and a container healthcheck. It does not publish a host port; the m3s controller assigns a loopback-only port to the registered entry service and Caddy handles HTTPS. The app does not need a release marker, registry image, deployment workflow or deployment secret.
+
+## Local smoke test
+
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml up --build --wait -d
+curl --fail http://127.0.0.1:18080/
+curl --fail http://127.0.0.1:18080/healthz
+docker compose -f compose.yaml -f compose.dev.yaml down --remove-orphans
+```
+
+`compose.dev.yaml` is only for local development; production reads the root `compose.yaml` alone.
 
 ## Releases
 
-Publish a non-prerelease GitHub release from a tag on `main`. The release workflow builds the tagged Dockerfile, pushes it to GHCR, updates the `h3yyy` Komodo stack with the immutable image digest and this repo's `compose.yaml`, then verifies `/release.txt` on the public URL. If verification fails, it restores the previous Compose configuration and digest. Deployments and container logs are visible in Komodo at `http://100.105.6.60:9120` from the tailnet.
+After registration in the trusted m3s registry (`repository: manuelseeger/h3yyy`, chosen `slug`, `service: web`, `port: 80`, `health_path: /healthz`), publish a non-draft, non-prerelease GitHub release at a new tag. The m3s controller polls releases, resolves the tag to a commit, builds the source and deploys it. CI only tests the app; it does not deploy. No app-specific credentials, DNS edit or infrastructure change is needed for later releases. A slug rename is a registry change, not a new app identity. Do not move a published tag. Access to release publishing and Dockerfile editing is trusted host-code access.
 
-This public proof repo uses the `p` environment secrets `KOMODO_API_KEY` and `KOMODO_API_SECRET`, and `TS_OIDC_CLIENT_ID` and `TS_OIDC_AUDIENCE` (stored as environment secrets for convenience although neither is sensitive). For future **private** repos on a personal GitHub Free account, use repository secrets and variables instead (private environment secrets require Pro). GitHub Pro does not share secrets across personal repositories. The Komodo API key must be restricted to this stack with Write permission. Protect releases/tags against untrusted collaborators: Write access to a Komodo Compose stack can run arbitrary containers on gail and is effectively host-root access.
-
-### Tailscale identity (no shared credential in GitHub)
-
-In the Tailscale admin console, create an **OpenID Connect federated trust credential** (not an OAuth client secret): issuer `GitHub Actions` / `https://token.actions.githubusercontent.com`, subject `repo:manuelseeger@45933060/h3yyy@1388727020:environment:p` (this repo uses GitHub's post-July-2026 immutable subject format). Optionally match custom claims `repository_id = 1388727020` and `event_name = release`. Grant only `auth_keys` write scope for `tag:github-actions`. Permit that tag to access gail on TCP 9120 in tailnet policy. Copy the returned **client ID** and **audience** (neither is sensitive) into the GitHub `p` environment secrets `TS_OIDC_CLIENT_ID` and `TS_OIDC_AUDIENCE`. Alternatively, change the workflow to use environment variables if desired. The release job has `id-token: write`; Tailscale joins the runner as an ephemeral tagged device after checking the GitHub-signed OIDC token. No long-lived Tailscale secret is stored in this repo.
-
-GHCR package visibility must permit gail to pull the image. For a public package, anonymous pulls work; a private package requires registry credentials in Komodo. Do not expose Komodo through the public wildcard Caddy ingress.
-
-Local Compose validation:
-
-```sh
-IMAGE_REF=ghcr.io/manuelseeger/h3yyy@sha256:$(printf 'a%.0s' {1..64}) docker compose config --quiet
-```
+For a visible update, change `index.html` in a new commit and publish another release. The homepage is human-facing content, not a deployment verification protocol. The platform checks the normal health endpoint and container healthcheck.

@@ -1,19 +1,9 @@
-name: h3yyy
 services:
   web:
-    image: ${IMAGE_REF:?Set the immutable GHCR image digest}
-    restart: unless-stopped
-    ports:
-      # Docker bypasses UFW; only host Caddy can reach this port.
-      - "127.0.0.1:8081:80"
+    build: .
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
