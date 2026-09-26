@@ -16,7 +16,7 @@ jobs:
     # Do not let prereleases or drafts replace production.
     if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
     runs-on: ubuntu-latest
-    environment: production
+    environment: p
     steps:
       - uses: actions/checkout@v4
         with:
