@@ -21,8 +21,8 @@ jobs:
     steps:
       - name: Verify the Tailscale OIDC trust is configured
         env:
-          CLIENT_ID: ${{ vars.TS_OIDC_CLIENT_ID }}
-          AUDIENCE: ${{ vars.TS_OIDC_AUDIENCE }}
+          CLIENT_ID: ${{ secrets.TS_OIDC_CLIENT_ID }}
+          AUDIENCE: ${{ secrets.TS_OIDC_AUDIENCE }}
         run: |
           test -n "$CLIENT_ID" && test -n "$AUDIENCE" || {
             echo 'Set TS_OIDC_CLIENT_ID and TS_OIDC_AUDIENCE in the p environment' >&2
@@ -49,8 +49,8 @@ jobs:
             RELEASE_TAG=${{ github.event.release.tag_name }}
       - uses: tailscale/github-action@v4
         with:
-          oauth-client-id: ${{ vars.TS_OIDC_CLIENT_ID }}
-          audience: ${{ vars.TS_OIDC_AUDIENCE }}
+          oauth-client-id: ${{ secrets.TS_OIDC_CLIENT_ID }}
+          audience: ${{ secrets.TS_OIDC_AUDIENCE }}
           tags: tag:github-actions
       - name: Deploy the immutable digest through Komodo
         env:
