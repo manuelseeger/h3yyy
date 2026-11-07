@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push release images
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+
+          sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          repository = os.environ["GITHUB_REPOSITORY"]
+          model = json.loads(subprocess.check_output([
+              "docker", "compose", "--env-file", "/dev/null", "-f", "compose.yaml",
+              "config", "--no-interpolate", "--no-env-resolution", "--format", "json",
+          ], text=True))
+          groups = {}
+          for name, service in model["services"].items():
+              build = service.get("build")
+              if build:
+                  key = json.dumps(build, sort_keys=True)
+                  if "$" in key:
+                      raise SystemExit(f"build section for {name} must be literal")
+                  groups.setdefault(key, []).append(name)
+          for key, names in groups.items():
+              build = json.loads(key)
+              supported = {"context", "dockerfile", "args", "target", "labels", "pull", "no_cache", "platforms"}
+              if set(build) - supported:
+                  raise SystemExit(f"unsupported build fields for {names}: {sorted(set(build) - supported)}")
+              if build.get("platforms", ["linux/amd64"]) != ["linux/amd64"]:
+                  raise SystemExit("release images must target linux/amd64")
+              scope = hashlib.sha256(key.encode()).hexdigest()[:16]
+              command = ["docker", "buildx", "build", "--platform", "linux/amd64", "--push",
+                         "--cache-from", f"type=gha,version=2,scope={scope}",
+                         "--cache-to", f"type=gha,version=2,mode=max,scope={scope}"]
+              for name in names:
+                  command += ["--tag", f"ghcr.io/{repository.lower()}/{name}:{sha}"]
+              command += ["--file", os.path.join(build["context"], build.get("dockerfile", "Dockerfile"))]
+              if build.get("target"):
+                  command += ["--target", build["target"]]
+              for option in ("pull", "no_cache"):
+                  if build.get(option):
+                      command.append("--" + option.replace("_", "-"))
+              for name, value in (build.get("args") or {}).items():
+                  if value is None:
+                      raise SystemExit(f"build arg {name} must have a literal value")
+                  command += ["--build-arg", f"{name}={value}"]
+              labels = dict(build.get("labels") or {})
+              labels.update({"org.opencontainers.image.source": f"https://github.com/{repository}",
+                             "org.opencontainers.image.revision": sha})
+              for name, value in labels.items():
+                  command += ["--label", f"{name}={value}"]
+              subprocess.run(command + [build["context"]], check=True)
+          PY
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag --generate-notes
